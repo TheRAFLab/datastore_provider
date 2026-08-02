@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# MacOS
+.DS_Store
+
+# Local tmp environment
+tmp/
+example/
+local_config.json
+
