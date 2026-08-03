@@ -223,5 +223,7 @@ __marimo__/
 # Local tmp environment
 tmp/
 example/
+example.py
+example_config.json
 local_config.json
 
