@@ -144,19 +144,58 @@ def test_invalid_mode_raises(provider):
         provider.load_table("samples", mode="sideways")
 
 
-def test_unsupported_format_raises(datastore_root):
-    provider = DatastoreProvider(
-        {
-            "DATASTORE_ROOT": str(datastore_root),
-            "TABLES": [{"name": "samples", "format": "xml"}],
-        }
-    )
+def test_unsupported_format_raises_at_construction(datastore_root):
     with pytest.raises(ValueError, match="Unsupported format"):
-        provider.load_table("samples")
+        DatastoreProvider(
+            {
+                "DATASTORE_ROOT": str(datastore_root),
+                "TABLES": [{"name": "samples", "format": "xml"}],
+            }
+        )
 
 
-def test_missing_datastore_root_raises():
-    provider = DatastoreProvider({"TABLES": TABLES})
+def test_missing_datastore_root_raises_at_construction():
+    with pytest.raises(ValueError, match="DATASTORE_ROOT is not defined"):
+        DatastoreProvider({"TABLES": TABLES})
+
+
+def test_missing_table_format_raises_at_construction(datastore_root):
+    with pytest.raises(ValueError, match="has no 'format'"):
+        DatastoreProvider(
+            {"DATASTORE_ROOT": str(datastore_root), "TABLES": [{"name": "samples"}]}
+        )
+
+
+def test_missing_table_name_raises_at_construction(datastore_root):
+    with pytest.raises(ValueError, match="has no 'name'"):
+        DatastoreProvider(
+            {"DATASTORE_ROOT": str(datastore_root), "TABLES": [{"format": "jsonl"}]}
+        )
+
+
+def test_non_dict_table_definition_raises(datastore_root):
+    with pytest.raises(ValueError, match="must be a dict"):
+        DatastoreProvider(
+            {"DATASTORE_ROOT": str(datastore_root), "TABLES": ["samples"]}
+        )
+
+
+def test_non_list_tables_raises(datastore_root):
+    with pytest.raises(ValueError, match="TABLES must be a list"):
+        DatastoreProvider(
+            {"DATASTORE_ROOT": str(datastore_root), "TABLES": {"name": "samples"}}
+        )
+
+
+def test_empty_tables_is_allowed(datastore_root):
+    """A datastore with no tables declared is valid, just unusable."""
+    provider = DatastoreProvider({"DATASTORE_ROOT": str(datastore_root)})
+    assert provider.tables == {}
+
+
+def test_mutating_config_after_construction_still_guarded(provider):
+    """build_table_path keeps its own check, since config is public."""
+    del provider.config["DATASTORE_ROOT"]
     with pytest.raises(ValueError, match="DATASTORE_ROOT is not defined"):
         provider.build_table_path("samples")
 
@@ -184,5 +223,11 @@ def test_storage_options_are_built_when_s3_enabled():
 
 
 def test_s3_region_defaults_when_unset():
-    provider = DatastoreProvider({"TABLES": TABLES, "S3_ENABLED": True})
+    provider = DatastoreProvider(
+        {
+            "DATASTORE_ROOT": "s3://bucket/datastore",
+            "TABLES": TABLES,
+            "S3_ENABLED": True,
+        }
+    )
     assert provider.storage_options["aws_region"] == "us-east-1"

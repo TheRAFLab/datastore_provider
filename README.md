@@ -103,11 +103,13 @@ Every row carries a `source_file` column recording which file it came from, whic
 
 Builds a provider from a config dictionary. If `S3_ENABLED` is true, AWS credentials are collected into the `storage_options` passed to every Polars scan; otherwise `storage_options` is `None`.
 
+The configuration is validated up front, so typos fail here rather than on first use. Raises `ValueError` if `DATASTORE_ROOT` is unset, if `TABLES` is not a list, or if any table definition is not a dict, is missing `name` or `format`, or declares an unsupported format.
+
 ### `load_table(table_name: str, mode: str = "lazy")`
 
-Scans every file belonging to `table_name` and returns a Polars `LazyFrame` (`mode="lazy"`) or `DataFrame` (`mode="eager"`).
+Scans every file belonging to `table_name` and returns a Polars `LazyFrame` (`mode="lazy"`) or `DataFrame` (`mode="eager"`). `mode` is typed as a `Literal`, so a typo is caught by a type checker before it runs.
 
-Raises `ValueError` if the table is not in the config, if `mode` is not `lazy` or `eager`, or if the table's declared format is not supported.
+Raises `ValueError` if the table is not in the config, or if `mode` is not `lazy` or `eager`. Table formats are validated when the provider is built.
 
 ### `build_table_path(table_name: str) -> str`
 

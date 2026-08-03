@@ -1,4 +1,9 @@
+from collections.abc import Callable
+from typing import Literal
+
 import polars as pl
+
+Mode = Literal["lazy", "eager"]
 
 
 class DatastoreProvider:
@@ -36,16 +41,36 @@ class DatastoreProvider:
                 AWS_REGION (str): Used when S3_ENABLED is true. Defaults to
                     "us-east-1".
 
-        Note:
-            The configuration is not validated here. A missing DATASTORE_ROOT
-            or an unsupported table format is only reported when the table is
-            resolved or loaded.
+        Raises:
+            ValueError: If DATASTORE_ROOT is not set, if TABLES is not a list,
+                or if any table definition is missing a name, is missing a
+                format, or declares an unsupported format.
         """
         self.config = config
-        tables = config.get("TABLES", [])
-        self.tables = {table["name"]: table for table in tables}
         self.formats = ["jsonl", "csv", "parquet"]
 
+        tables = config.get("TABLES", [])
+        if not isinstance(tables, list):
+            raise ValueError(  # noqa: TRY004
+                f"TABLES must be a list of table definitions, "
+                f"got {type(tables).__name__}."
+            )
+        self.tables = {}
+        for position, table in enumerate(tables):
+            if not isinstance(table, dict):
+                raise ValueError(  # noqa: TRY004
+                    f"Table definition at position {position} must be a dict, "
+                    f"got {type(table).__name__}."
+                )
+            if "name" not in table:
+                raise ValueError(
+                    f"Table definition at position {position} has no 'name'."
+                )
+            self.tables[table["name"]] = table
+
+        self._validate()
+
+        self.storage_options: dict | None
         if self.config.get("S3_ENABLED", False):
             self.storage_options = {
                 "aws_access_key_id": self.config.get("AWS_ACCESS_KEY_ID", "YOUR_ACCESS_KEY"),
@@ -54,6 +79,28 @@ class DatastoreProvider:
             }
         else:
             self.storage_options = None
+
+
+    def _validate(self) -> None:
+        """
+        Check the configuration up front, so typos fail at construction.
+
+        Raises:
+            ValueError: If DATASTORE_ROOT is not set, or if any table is
+                missing a format or declares an unsupported one.
+        """
+        if not self.config.get("DATASTORE_ROOT"):
+            raise ValueError("DATASTORE_ROOT is not defined in the configuration.")
+
+        for table_name, table_config in self.tables.items():
+            table_format = table_config.get("format")
+            if not table_format:
+                raise ValueError(f"Table '{table_name}' has no 'format'.")
+            if table_format not in self.formats:
+                raise ValueError(
+                    f"Unsupported format '{table_format}' for table '{table_name}'. "
+                    f"Supported formats are {', '.join(self.formats)}."
+                )
 
 
     def build_table_path(self, table_name: str) -> str:
@@ -68,7 +115,9 @@ class DatastoreProvider:
 
         Raises:
             ValueError: If the table is not in the configuration, or if
-                DATASTORE_ROOT is not set.
+                DATASTORE_ROOT is not set. The latter is checked when the
+                provider is built, so it can only happen if config has been
+                mutated since.
         """
         table_config = self.tables.get(table_name)
         if not table_config:
@@ -98,7 +147,7 @@ class DatastoreProvider:
         return f"{self.build_table_path(table_name)}/*.{format}"
 
 
-    def load_table(self, table_name: str, mode: str = "lazy") -> pl.DataFrame | pl.LazyFrame:
+    def load_table(self, table_name: str, mode: Mode = "lazy") -> pl.DataFrame | pl.LazyFrame:
         """
         Scan every file belonging to a table and return it as a Polars frame.
 
@@ -117,32 +166,33 @@ class DatastoreProvider:
             is "eager".
 
         Raises:
-            ValueError: If the table is not in the configuration, if mode is
-                neither "lazy" nor "eager", or if the table's declared format
-                is not one of "jsonl", "csv" or "parquet".
+            ValueError: If the table is not in the configuration, or if mode
+                is neither "lazy" nor "eager". The table's format is validated
+                when the provider is built.
         """
         table_config = self.tables.get(table_name)
         if not table_config:
             raise ValueError(f"Table '{table_name}' not found in configuration.")
-        
+
         if mode not in ["lazy", "eager"]:
             raise ValueError(f"Invalid mode '{mode}'. Supported modes are 'lazy' and 'eager'.")
 
-        if table_config.get("format") not in self.formats:
-            raise ValueError(f"Unsupported format '{table_config.get('format')}' for table '{table_name}'.")
-        else:
-            glob_string = self.build_glob_string(table_name, table_config.get("format"))  
-            
-            if table_config.get("format") == "jsonl":
-                scan = pl.scan_ndjson(glob_string, storage_options=self.storage_options, include_file_paths="source_file")
-            elif table_config.get("format") == "csv":
-                scan = pl.scan_csv(glob_string, storage_options=self.storage_options, include_file_paths="source_file")
-            elif table_config.get("format") == "parquet":
-                scan = pl.scan_parquet(glob_string, storage_options=self.storage_options, include_file_paths="source_file")
-            else:   
-                raise ValueError(f"Unsupported format '{table_config.get('format')}' for table '{table_name}'.")
+        table_format = table_config["format"]
+        glob_string = self.build_glob_string(table_name, table_format)
 
-            return scan.collect() if mode == "eager" else scan
+        # The format is checked in _validate, so no fallback branch is needed.
+        scanners: dict[str, Callable[..., pl.LazyFrame]] = {
+            "jsonl": pl.scan_ndjson,
+            "csv": pl.scan_csv,
+            "parquet": pl.scan_parquet,
+        }
+        scan = scanners[table_format](
+            glob_string,
+            storage_options=self.storage_options,
+            include_file_paths="source_file",
+        )
+
+        return scan.collect() if mode == "eager" else scan
 
 
 
