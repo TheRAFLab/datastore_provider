@@ -17,17 +17,22 @@ A "datastore" here is just a directory tree: each table is a subdirectory, and e
 
 ## Installation
 
-The project is managed with [uv](https://docs.astral.sh/uv/):
+With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv sync
+uv add datastore-provider
 ```
 
-Or install it into an existing environment:
+Or with pip:
 
 ```bash
-pip install git+https://github.com/TheRAFLab/datastore_provider.git
+pip install datastore-provider
 ```
+
+Requires Python 3.10 or newer. The only dependency is [Polars](https://pola.rs).
+
+To work on the library itself rather than install it, see
+[Development](#development).
 
 ## Configuration
 
@@ -126,6 +131,8 @@ Reads and parses a JSON config file.
 ## Development
 
 ```bash
+git clone https://github.com/TheRAFLab/datastore_provider.git
+cd datastore_provider
 uv sync
 uv run pytest
 uv run ruff check .

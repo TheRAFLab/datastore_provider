@@ -1,6 +1,6 @@
 [project]
 name = "datastore-provider"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Python/Polars provider for reading folders of data files (JSONL, CSV, Parquet) as tables."
 readme = "README.md"
 requires-python = ">=3.10"
