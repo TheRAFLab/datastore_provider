@@ -1,8 +1,12 @@
 name: Publish
 
+# A published GitHub Release goes to PyPI. Running the workflow by hand is a
+# dry run: it always targets TestPyPI, so a manual trigger can never publish a
+# real release by mistake.
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,6 +20,7 @@ jobs:
           enable-cache: true
 
       - name: Check the tag matches the project version
+        if: github.event_name == 'release'
         run: |
           project_version="$(uv version --short)"
           tag_version="${GITHUB_REF_NAME#v}"
@@ -37,8 +42,36 @@ jobs:
           name: dist
           path: dist/
 
-  publish:
+  testpypi:
     needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/datastore-provider
+
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # TestPyPI is a rehearsal target, so re-running a dry run for a
+          # version already uploaded should not fail the workflow.
+          skip-existing: true
+
+  pypi:
+    needs: build
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
 
     # Trusted publishing: PyPI verifies this workflow's OIDC identity, so no
