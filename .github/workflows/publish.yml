@@ -1,0 +1,62 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Check the tag matches the project version
+        run: |
+          project_version="$(uv version --short)"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$project_version" != "$tag_version" ]; then
+            echo "Release tag '${GITHUB_REF_NAME}' does not match the version in pyproject.toml ('${project_version}')." >&2
+            echo "Bump the version, or retag the release, before publishing." >&2
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build
+
+      - name: Check metadata
+        run: uvx twine check dist/*
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    # Trusted publishing: PyPI verifies this workflow's OIDC identity, so no
+    # API token is stored. The environment must exist on the repository and be
+    # named in the PyPI publisher configuration.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/datastore-provider
+
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
